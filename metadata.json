@@ -1,0 +1,10 @@
+{
+  "name": "Weather Intelligence App",
+  "description": "Comprehensive weather search, 7-day forecast, temperature trend charts, and smart activity recommendations using Open-Meteo.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
