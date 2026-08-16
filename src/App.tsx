@@ -77,6 +77,22 @@ export default function App() {
     (f) => f.latitude === currentCity.latitude && f.longitude === currentCity.longitude
   );
 
+  // Helper to update ?city in browser URL without reloading
+  const updateCityInUrl = (cityName: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (cityName && cityName.trim()) {
+      url.searchParams.set('city', cityName.trim());
+    } else {
+      url.searchParams.delete('city');
+    }
+    const newRelativePath = url.pathname + (url.search ? url.search : '') + url.hash;
+    const currentRelativePath = window.location.pathname + (window.location.search ? window.location.search : '') + window.location.hash;
+    if (newRelativePath !== currentRelativePath) {
+      window.history.pushState({ city: cityName }, '', newRelativePath);
+    }
+  };
+
   // Fetch Forecast Data function
   const fetchWeatherForLocation = useCallback(async (city: GeoLocationResult) => {
     setIsLoadingForecast(true);
@@ -98,9 +114,85 @@ export default function App() {
     }
   }, []);
 
-  // Initial load
+  // Initial load: check for ?city query parameter via URLSearchParams
   useEffect(() => {
-    fetchWeatherForLocation(DEFAULT_CITY);
+    const params = new URLSearchParams(window.location.search);
+    const cityParam = params.get('city');
+
+    if (cityParam && cityParam.trim()) {
+      const runInitialCitySearch = async (query: string) => {
+        setIsLoadingForecast(true);
+        setError(null);
+        setSearchResults([]);
+
+        try {
+          const results = await searchCities(query);
+          if (!results || results.length === 0) {
+            setForecastData(null);
+            setError({
+              type: 'not_found',
+              message: `City "${query}" not found. Please try another search.`,
+            });
+            setIsLoadingForecast(false);
+          } else {
+            const matchedCity = results[0];
+            await fetchWeatherForLocation(matchedCity);
+          }
+        } catch (err: any) {
+          console.error('Initial search error:', err);
+          setForecastData(null);
+          setError({
+            type: 'network',
+            message: 'Search service failed. Please check network and try again.',
+          });
+          setIsLoadingForecast(false);
+        }
+      };
+
+      runInitialCitySearch(cityParam.trim());
+    } else {
+      fetchWeatherForLocation(DEFAULT_CITY);
+    }
+  }, [fetchWeatherForLocation]);
+
+  // Handle browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const cityParam = params.get('city');
+
+      if (cityParam && cityParam.trim()) {
+        setIsLoadingForecast(true);
+        setError(null);
+        setSearchResults([]);
+        try {
+          const results = await searchCities(cityParam.trim());
+          if (!results || results.length === 0) {
+            setForecastData(null);
+            setError({
+              type: 'not_found',
+              message: `City "${cityParam.trim()}" not found. Please try another search.`,
+            });
+            setIsLoadingForecast(false);
+          } else {
+            await fetchWeatherForLocation(results[0]);
+          }
+        } catch (err) {
+          console.error('Popstate search error:', err);
+          setForecastData(null);
+          setError({
+            type: 'network',
+            message: 'Unable to fetch weather forecast right now.',
+          });
+          setIsLoadingForecast(false);
+        }
+      } else {
+        fetchWeatherForLocation(DEFAULT_CITY);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [fetchWeatherForLocation]);
 
   // Handle Search submit
@@ -120,9 +212,10 @@ export default function App() {
         });
         setSearchResults([]);
       } else if (results.length === 1) {
-        // Single match found: directly select & fetch forecast
+        // Single match found: directly select & fetch forecast, update URL
         setSearchResults([]);
-        fetchWeatherForLocation(results[0]);
+        await fetchWeatherForLocation(results[0]);
+        updateCityInUrl(results[0].name);
       } else {
         // Multiple matches found: present to user in SearchBar dropdown
         setSearchResults(results);
@@ -139,10 +232,17 @@ export default function App() {
   };
 
   // Handle manual city selection from matches dropdown or quick pills
-  const handleSelectCity = (city: GeoLocationResult) => {
+  const handleSelectCity = async (city: GeoLocationResult) => {
     setSearchResults([]);
     setError(null);
-    fetchWeatherForLocation(city);
+    await fetchWeatherForLocation(city);
+    updateCityInUrl(city.name);
+  };
+
+  // Handle clearing the search
+  const handleClearSearch = () => {
+    setSearchResults([]);
+    updateCityInUrl(null);
   };
 
   // Handle Current Location GPS
@@ -169,6 +269,7 @@ export default function App() {
           longitude,
         };
         setIsLocating(false);
+        updateCityInUrl(null);
         fetchWeatherForLocation(myCity);
       },
       (err) => {
@@ -202,6 +303,7 @@ export default function App() {
           isLocating={isLocating}
           favorites={favorites}
           currentCity={currentCity}
+          onClear={handleClearSearch}
         />
 
         {/* Error Notification View */}

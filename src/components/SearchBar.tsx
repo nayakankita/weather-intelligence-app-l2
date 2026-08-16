@@ -11,6 +11,7 @@ interface SearchBarProps {
   isLocating: boolean;
   favorites: GeoLocationResult[];
   currentCity?: GeoLocationResult;
+  onClear?: () => void;
 }
 
 const POPULAR_CITIES = [
@@ -31,10 +32,25 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   isLocating,
   favorites,
   currentCity,
+  onClear,
 }) => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlCity = params.get('city');
+      if (urlCity) return urlCity;
+    }
+    return currentCity?.name || '';
+  });
   const [showResultsDropdown, setShowResultsDropdown] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Synchronize search bar query if currentCity changes and dropdown is closed
+  useEffect(() => {
+    if (currentCity?.name && !showResultsDropdown) {
+      setQuery(`${currentCity.name}${currentCity.country && currentCity.country !== 'GPS Location' ? `, ${currentCity.country}` : ''}`);
+    }
+  }, [currentCity, showResultsDropdown]);
 
   // Hide dropdown if clicked outside
   useEffect(() => {
@@ -65,6 +81,14 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     onSelectCity(city);
     setShowResultsDropdown(false);
     setQuery(`${city.name}${city.country ? `, ${city.country}` : ''}`);
+  };
+
+  const handleClear = () => {
+    setQuery('');
+    setShowResultsDropdown(false);
+    if (onClear) {
+      onClear();
+    }
   };
 
   const handlePopularClick = (item: { name: string; country: string; lat: number; lon: number }) => {
@@ -105,10 +129,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           {query && (
             <button
               type="button"
-              onClick={() => {
-                setQuery('');
-                setShowResultsDropdown(false);
-              }}
+              onClick={handleClear}
               className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 text-xs font-semibold"
             >
               Clear
